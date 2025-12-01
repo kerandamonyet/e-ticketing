@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(USER)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+
+  // ✅ RELASI BALIK
+  eoVerification EoVerification?
+
+  // ✅ RELASI AUDIT
+  eoAuditLogs    EoAuditLog[]    @relation("UserEoAudit")
+  adminAuditLogs AdminAuditLog[] @relation("UserAdminAudit")
+}
+
+enum UserRole {
+  USER
+  EO
+  ADMIN
+}
+
+model EoVerification {
+  id       String @id @default(cuid())
+  userId   String @unique
+  fullName String
+
+  nik     String // bcrypt hash
+  nikHash String @unique // sha256
+
+  phone       String
+  address     String
+  ktpImage    String
+  selfieImage String
+
+  status EoStatus @default(PENDING)
+  note   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model EoAuditLog {
+  id        String   @id @default(cuid())
+  eoId      String
+  action    String // "SUBMIT","REJECT","RESUBMIT","APPROVE"
+  actorId   String?
+  actorRole String? // "ADMIN"|"USER"
+  note      String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation("UserEoAudit", fields: [actorId], references: [id])
+}
+
+enum EoStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model AdminAuditLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  action    String
+  targetId  String?
+  detail    String?
+  createdAt DateTime @default(now())
+
+  user User @relation("UserAdminAudit", fields: [adminId], references: [id])
+}

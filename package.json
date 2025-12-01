@@ -1,0 +1,24 @@
+{
+  "name": "ticketing-monorepo",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "turbo-windows-64": "^2.6.1"
+  },
+  "devDependencies": {
+    "turbo": "^2.6.1"
+  },
+  "packageManager": "npm@10.2.4",
+   "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}
