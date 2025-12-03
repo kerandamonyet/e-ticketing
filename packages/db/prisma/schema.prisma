@@ -7,24 +7,30 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+//////////////////////////////////////////////////////
+// USERS
+//////////////////////////////////////////////////////
+
 model User {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   name      String
-  email     String   @unique
+  email     String    @unique
   password  String
-  role      UserRole @default(USER)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  role      UserRole  @default(USER)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-
-  // ✅ RELASI BALIK
+  eo             EO?
+  eoTeam         EOTeamMember[]
   eoVerification EoVerification?
 
-  // ✅ RELASI AUDIT
   eoAuditLogs    EoAuditLog[]    @relation("UserEoAudit")
   adminAuditLogs AdminAuditLog[] @relation("UserAdminAudit")
+
+  tickets    Ticket[]
+  promoUsers PromoUser[] // FIXED
 }
 
 enum UserRole {
@@ -33,13 +39,17 @@ enum UserRole {
   ADMIN
 }
 
+//////////////////////////////////////////////////////
+// EO VERIFICATION
+//////////////////////////////////////////////////////
+
 model EoVerification {
   id       String @id @default(cuid())
   userId   String @unique
   fullName String
 
-  nik     String // bcrypt hash
-  nikHash String @unique // sha256
+  nik     String
+  nikHash String @unique
 
   phone       String
   address     String
@@ -55,24 +65,303 @@ model EoVerification {
   user User @relation(fields: [userId], references: [id])
 }
 
-model EoAuditLog {
-  id        String   @id @default(cuid())
-  eoId      String
-  action    String // "SUBMIT","REJECT","RESUBMIT","APPROVE"
-  actorId   String?
-  actorRole String? // "ADMIN"|"USER"
-  note      String?
-  meta      Json?
-  createdAt DateTime @default(now())
-
-  user User? @relation("UserEoAudit", fields: [actorId], references: [id])
-}
-
 enum EoStatus {
   PENDING
   APPROVED
   REJECTED
 }
+
+//////////////////////////////////////////////////////
+// EO
+//////////////////////////////////////////////////////
+
+model EO {
+  id        String   @id @default(cuid())
+  ownerId   String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner  User           @relation(fields: [ownerId], references: [id])
+  events Event[]
+  team   EOTeamMember[]
+  audits EoAuditLog[]
+}
+
+model EoAuditLog {
+  id        String   @id @default(cuid())
+  eoId      String
+  action    String
+  actorId   String?
+  actorRole String?
+  note      String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  eo   EO    @relation(fields: [eoId], references: [id])
+  user User? @relation("UserEoAudit", fields: [actorId], references: [id])
+}
+
+enum EORole {
+  ADMIN
+  SCANNER
+}
+
+//////////////////////////////////////////////////////
+// EVENTS
+//////////////////////////////////////////////////////
+
+model Event {
+  id          String  @id @default(cuid())
+  eoId        String
+  title       String
+  description String?
+
+  type   EventType
+  status EventStatus @default(DRAFT)
+
+  startDate DateTime
+  endDate   DateTime
+  timezone  String   @default("Asia/Jakarta")
+
+  ticketLimit Int?
+  soldCount   Int  @default(0)
+
+  saleStart DateTime?
+  saleEnd   DateTime?
+
+  banner Json?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+
+  meta Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  eo EO @relation(fields: [eoId], references: [id])
+
+  accesses TeamEventAccess[]
+  tickets  Ticket[]
+  scans    ScanLog[]
+
+  locations   EventLocation[]
+  onlineLinks EventOnlineLink[]
+
+  promos      Promo[] // FIXED relation back
+  ticketTypes TicketType[] // FIXED relation back
+
+  @@index([eoId])
+  @@index([status])
+  @@index([startDate, status])
+}
+
+enum EventType {
+  OFFLINE
+  ONLINE
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  FINISHED
+  CANCELLED
+}
+
+//////////////////////////////////////////////////////
+// EVENT SUB MODELS
+//////////////////////////////////////////////////////
+
+model EventLocation {
+  id        String   @id @default(cuid())
+  eventId   String
+  label     String
+  mapLink   String?
+  address   String?
+  createdAt DateTime @default(now())
+
+  event Event @relation(fields: [eventId], references: [id])
+}
+
+model EventOnlineLink {
+  id        String   @id @default(cuid())
+  eventId   String
+  platform  String
+  url       String
+  createdAt DateTime @default(now())
+
+  event Event @relation(fields: [eventId], references: [id])
+}
+
+//////////////////////////////////////////////////////
+// TICKETING + PRESALE + PROMO
+//////////////////////////////////////////////////////
+
+model TicketType {
+  id        String   @id @default(cuid())
+  eventId   String
+  name      String
+  price     Int
+  quota     Int?
+  createdAt DateTime @default(now())
+
+  event    Event             @relation(fields: [eventId], references: [id])
+  tickets  Ticket[] // FIXED
+  presales Presale[]
+  promos   PromoTicketType[]
+
+  @@index([eventId])
+}
+
+model Ticket {
+  id           String  @id @default(cuid())
+  ticketTypeId String
+  userId       String?
+  code         String  @unique
+  isUsed       Boolean @default(false)
+
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
+  user       User?      @relation(fields: [userId], references: [id])
+  scans      ScanLog[]
+  event      Event?     @relation(fields: [eventId], references: [id])
+  eventId    String?
+
+  @@index([userId])
+  @@index([ticketTypeId])
+}
+
+//////////////////////////////////////////////////////
+// PRESALE
+//////////////////////////////////////////////////////
+
+model Presale {
+  id           String @id @default(cuid())
+  ticketTypeId String
+  tierName     String
+  price        Int
+  quota        Int?
+  soldCount    Int    @default(0)
+
+  startDate DateTime?
+  endDate   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
+
+  @@index([ticketTypeId])
+}
+
+//////////////////////////////////////////////////////
+// PROMO
+//////////////////////////////////////////////////////
+
+model Promo {
+  id          String  @id @default(cuid())
+  eventId     String
+  code        String? @unique
+  name        String
+  description String?
+
+  discountType  PromoDiscountType
+  discountValue Int
+
+  quota     Int?
+  usedCount Int  @default(0)
+
+  validFrom  DateTime?
+  validUntil DateTime?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event        Event             @relation(fields: [eventId], references: [id])
+  ticketTypes  PromoTicketType[]
+  allowedUsers PromoUser[]
+
+  @@index([eventId])
+}
+
+enum PromoDiscountType {
+  PERCENT
+  AMOUNT
+}
+
+model PromoTicketType {
+  id           String @id @default(cuid())
+  promoId      String
+  ticketTypeId String
+
+  promo      Promo      @relation(fields: [promoId], references: [id])
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
+
+  @@unique([promoId, ticketTypeId])
+}
+
+model PromoUser {
+  id      String @id @default(cuid())
+  promoId String
+  userId  String
+
+  promo Promo @relation(fields: [promoId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([promoId, userId])
+}
+
+//////////////////////////////////////////////////////
+// TEAM
+//////////////////////////////////////////////////////
+
+model EOTeamMember {
+  id        String   @id @default(cuid())
+  eoId      String
+  userId    String
+  role      EORole
+  createdAt DateTime @default(now())
+
+  eo       EO                @relation(fields: [eoId], references: [id])
+  user     User              @relation(fields: [userId], references: [id])
+  accesses TeamEventAccess[]
+  scans    ScanLog[]
+
+  @@unique([eoId, userId])
+}
+
+model TeamEventAccess {
+  id       String @id @default(cuid())
+  memberId String
+  eventId  String
+
+  member EOTeamMember @relation(fields: [memberId], references: [id])
+  event  Event        @relation(fields: [eventId], references: [id])
+
+  @@unique([memberId, eventId])
+}
+
+//////////////////////////////////////////////////////
+// SCAN LOG
+//////////////////////////////////////////////////////
+
+model ScanLog {
+  id        String   @id @default(cuid())
+  eventId   String
+  memberId  String
+  ticketId  String
+  result    String
+  createdAt DateTime @default(now())
+
+  event  Event        @relation(fields: [eventId], references: [id])
+  member EOTeamMember @relation(fields: [memberId], references: [id])
+  ticket Ticket       @relation(fields: [ticketId], references: [id])
+}
+
+//////////////////////////////////////////////////////
+// ADMIN AUDIT
+//////////////////////////////////////////////////////
 
 model AdminAuditLog {
   id        String   @id @default(cuid())

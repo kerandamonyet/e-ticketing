@@ -1,86 +1,104 @@
 require("dotenv").config();
 const express = require("express");
 const app = express();
-const authRoutes = require("./routes/auth");
-const eoRoutes = require("./routes/eo");
-const adminRoutes = require("./routes/admin");
+const swaggerUi = require("swagger-ui-express");
+const swaggerSpec = require("./docs/swagger");
+
 const cors = require("cors");
-const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const cookieParser = require("cookie-parser");
+const bodyParser = require("body-parser");
 const prisma = require("../../packages/db");
 
-app.use(express.json());
+// Router utama (ONE ENTRY POINT)
+const routes = require("./routes");
+
+// Middleware auth
+const authMiddleware = require("./middleware/userAuth");
+
+// Swagger Doc
+app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+/* ========================
+   GLOBAL MIDDLEWARE
+======================== */
+
+// Body parser
+app.use(bodyParser.json({ limit: "10mb" }));
+app.use(bodyParser.urlencoded({ limit: "10mb", extended: true }));
+
+// CORS
 app.use(
   cors({
     origin: ["http://localhost:3000", "http://localhost:3001"],
     credentials: true,
   })
 );
+
+// Cookie + security
 app.use(cookieParser());
 app.use(helmet());
 
-// RATE LIMITER instances
-const generalLimiter = rateLimit({
+// Rate limiter
+const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
 });
 
+/* ========================
+   ROOT
+======================== */
+
 app.get("/", (req, res) => {
   res.json({ status: "API Running" });
 });
 
-// mount with limiter BEFORE route handlers
-app.use("/api/auth", generalLimiter, authRoutes);
-app.use("/api/eo", generalLimiter, eoRoutes);
-app.use("/api/admin", generalLimiter, adminRoutes);
+/* ========================
+   API ROUTES
+======================== */
+
+// Semua route lewat sini (routes/index.js)
+app.use("/api", apiLimiter, routes);
+
+/* ========================
+   STATIC FILES
+======================== */
 
 app.use("/uploads", express.static("uploads"));
 
-// other route-specific rate limiters can be used too
-app.use(
-  "/api/eo/apply",
-  rateLimit({
-    windowMs: 10 * 60 * 1000,
-    max: 5,
-  })
-);
+/* ========================
+   TEST & DEBUG
+======================== */
 
-// health / test routes...
 app.post("/test-user", async (req, res) => {
-  try {
-    const user = await prisma.user.create({
-      data: {
-        name: "Debug User",
-        email: "debug@mail.com",
-        password: "123456",
-      },
-    });
-    res.json(user);
-  } catch (error) {
-    console.error("ERROR CREATE USER:", error);
-    res.status(500).json({ error: error.message });
-  }
+  const bcrypt = require("bcrypt");
+  const hashed = await bcrypt.hash("123456", 10);
+
+  const user = await prisma.user.create({
+    data: {
+      name: "Debug User",
+      email: "debug@mail.com",
+      password: hashed,
+    },
+  });
+
+  res.json(user);
 });
 
-app.get("/users", async (req, res) => {
-  try {
-    const users = await prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-    });
-    res.json(users);
-  } catch (error) {
-    console.error("DB ERROR:", error);
-    res.status(500).json({ error: "Failed to fetch users" });
-  }
-});
+/* ========================
+   PROFILE (PROTECTED)
+======================== */
 
-const authMiddleware = require("./middleware/auth");
 app.get("/profile", authMiddleware, (req, res) => {
   res.json({ user: req.user });
 });
+
+/* ========================
+   CLEAN SHUTDOWN
+======================== */
 
 process.on("SIGINT", async () => {
   console.log("Shutting down...");
@@ -88,6 +106,10 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
+/* ========================
+   START SERVER
+======================== */
+
 app.listen(4000, () => {
-  console.log("✅ API on http://localhost:4000");
+  console.log("✅ API running at http://localhost:4000");
 });

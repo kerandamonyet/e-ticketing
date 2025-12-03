@@ -2,9 +2,9 @@ const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const prisma = require("../../../packages/db");
-const auth = require("../middleware/auth");
-const adminAuth = require("../middleware/adminAuth");
+const prisma = require("../../../../packages/db");
+const auth = require("../../middleware/userAuth");
+const adminAuth = require("../../middleware/adminAuth");
 const ExcelJS = require("exceljs");
 const rateLimit = require("express-rate-limit");
 
@@ -103,8 +103,8 @@ router.post("/login", limiter, async (req, res) => {
     // Kirim sebagai HttpOnly Cookie
     res.cookie("admin_token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // Hanya https waktu produksi
-      sameSite: "strict",
+      secure: process.env.NODE_ENV === "production" || false, // Hanya https waktu produksi
+      sameSite: "lax",
       maxAge: 24 * 60 * 60 * 1000, // 1 hari
       path: "/",
     });

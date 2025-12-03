@@ -2,7 +2,7 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
-const Auth = require("../middleware/auth");
+const Auth = require("../middleware/userAuth");
 
 const prisma = require("../../../packages/db");
 
@@ -56,9 +56,7 @@ router.post("/login", async (req, res) => {
 
     const user = await prisma.user.findUnique({
       where: { email },
-      include: {
-        eoVerification: true,
-      },
+      include: { eoVerification: true },
     });
 
     if (!user) {
@@ -105,9 +103,10 @@ router.post("/login", async (req, res) => {
     // HttpOnly cookie
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      secure: false,
+      sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
     });
 
     return res.json({
@@ -127,16 +126,35 @@ router.post("/login", async (req, res) => {
 
 // GET LOGGED USER
 router.get("/me", Auth, async (req, res) => {
-  return res.status(200).json({
-    success: true,
-    user: req.user,
-  });
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      return res.status(401).json({ message: "User tidak valid" });
+    }
+
+    res.json({ user });
+  } catch (err) {
+    console.error("ME ERROR:", err);
+    res.status(500).json({ message: "Gagal mengambil session" });
+  }
 });
 
 // LOGOUT
 router.post("/logout", (req, res) => {
-  res.clearCookie("token");
-  res.json({ message: "Logout sukses" });
+  res.clearCookie("token", {
+    path: "/",
+  });
+  res.json({ success: true });
 });
 
 module.exports = router;
